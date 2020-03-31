@@ -1,4 +1,11 @@
 import React, { Component } from "react";
+import { findDOMNode } from "react-dom";
+import _ from "lodash";
+
+import ReactPlayer from "react-player";
+import screenfull from "screenfull";
+import VolumeSlider from "./VolumeSlider.js";
+
 import {
   Window,
   ButtonsContainer,
@@ -9,116 +16,150 @@ import {
   Playback,
   TimeStamp
 } from "./styled_components/components";
-import styled from "styled-components";
-
-const Video = styled.div`
-  width: 100% !important;
-  height: 85% !important;
-`;
 
 class VideoContainer extends Component {
   state = {
-    time: 0,
+    url: null,
+    playing: true,
+    controls: false,
+    light: false,
+    volume: 0.8,
+    muted: false,
     currTime: 0,
     scrubTime: 0,
-    videoId: null,
-    play: true,
-    ready: false
+    loaded: 0,
+    duration: 0,
+    loop: false
+  };
+
+  componentDidUpdate = prevProps => {
+    if (
+      !_.isEqual(prevProps.queue[0], this.props.queue[0]) &&
+      this.props.queue.length
+    ) {
+      this.setState(
+        {
+          url: this.props.queue[0] ? this.props.queue[0].url : "",
+          playing: true
+        },
+        () => {
+          if (this.props.queue[0]) {
+            this.player.seekTo(0);
+          }
+        }
+      );
+    }
   };
 
   componentDidMount = () => {
-    this.createIframeTag();
-  };
+    const { interval } = this.state;
+    const { socket } = this.props;
 
-  componentDidUpdate(nextProps) {
-    if (nextProps.queue[0] !== this.props.queue[0]) {
-      this.createIframeTag();
-    }
-  }
-
-  createIframeTag = () => {
-    if (!window.YT) {
-      const tag = document.createElement("script");
-      tag.src = "https://www.youtube.com/iframe_api";
-      console.log(window.onYouTubeIframeAPIReady);
-      window.onYouTubeIframeAPIReady = this.loadVideo;
-      const firstScriptTag = document.getElementsByTagName("script")[0];
-      firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-    } else {
-      this.loadVideo();
-    }
-  };
-
-  loadVideo = () => {
-    let videoId = this.parseVideoId(this.props.queue[0]);
-
-    this.player = new window.YT.Player(`video-player`, {
-      videoId: videoId,
-      playerVars: {
-        autoplay: 0,
-        rel: 0,
-        showinfo: 1,
-        egm: 0,
-        showsearch: 1,
-        controls: 0,
-        modestbranding: 0
-      },
-      events: {
-        onReady: this.onPlayerReady,
-        onPlaybackQualityChange: this.onPlayerPlaybackQualityChange,
-        onStateChange: this.onPlayerStateChange
+    socket.on("video details", ({ currTime, action }) => {
+      console.log(currTime, action);
+      clearInterval(interval);
+      switch (action) {
+        case "restart":
+          this.setState({ currTime: 0 }, () => {
+            this.player.seekTo(0);
+            this.progressBar();
+          });
+          break;
+        case "play":
+          this.setState({
+            playing: true,
+            currTime
+          });
+          this.progressBar();
+          break;
+        case "pause":
+          this.setState({ playing: false });
+          break;
+        case "update":
+          this.setState({ currTime: currTime }, () => {
+            this.player.seekTo(currTime);
+            this.progressBar();
+          });
+          break;
+        default:
+          break;
       }
     });
   };
 
-  onPlayerStateChange = event => {
-    if (event.data == window.YT.PlayerState.ENDED) {
-      this.nextVideo();
-    }
-  };
-
-  onPlayerReady = event => {
-    event.target.seekTo(0);
-    this.setState(
-      {
-        time: event.target.getDuration(),
-        ready: true
-      },
-      () => this.progressBar()
-    );
-  };
-
-  playVideo = () => {
-    this.player.playVideo();
-    this.progressBar();
-  };
-
-  pauseVideo = () => {
-    clearInterval(this.state.interval);
-    this.player.pauseVideo();
+  componentWillUnmount = () => {
+    this.props.socket.off("video details");
   };
 
   nextVideo = () => {
-    if (this.player) this.player.destroy();
     clearInterval(this.state.interval);
     this.setState({ currTime: 0 }, () => this.props.dequeueVideo());
+  };
+
+  restart = () => {
+    this.player.seekTo(0);
+    this.props.socket.emit("video details", {
+      action: "restart"
+    });
+  };
+
+  handlePlay = () => {
+    this.setState({ playing: true }, () => {
+      this.props.socket.emit("video details", {
+        action: "play"
+      });
+    });
+  };
+
+  handlePause = () => {
+    clearInterval(this.state.interval);
+    this.props.socket.emit("video details", {
+      currTime: this.state.currTime,
+      action: "pause"
+    });
+    this.setState({ playing: false });
+  };
+
+  handleDuration = duration => {
+    this.setState({
+      duration: this.player ? this.player.getDuration() : duration
+    });
+  };
+
+  handleClickFullscreen = () => {
+    screenfull.request(findDOMNode(this.player));
+  };
+
+  handleEnded = () => {
+    this.nextVideo();
+  };
+
+  handleVolumeChange = volume => {
+    this.setState({ volume });
   };
 
   updateProgressBarPosition = e => {
     const rect = e.target.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const totalWidth = rect.width - 1; //subtract borders
-    const newCurrTime = (x / totalWidth) * this.state.time;
+    const newCurrTime = (x / totalWidth) * this.state.duration;
 
-    clearInterval(this.state.interval);
-    this.player.seekTo(newCurrTime);
-    this.progressBar();
+    this.props.socket.emit("video details", {
+      currTime: newCurrTime,
+      action: "update"
+    });
+
+    this.setState({ currTime: newCurrTime }, () => {
+      clearInterval(this.state.interval);
+      this.player.seekTo(newCurrTime);
+      this.progressBar();
+    });
   };
 
   progressBar = () => {
     let interval = setInterval(() => {
       this.setState({
-        currTime: this.player.getCurrentTime()
+        currTime: this.player ? this.player.getCurrentTime() : 0
       });
     }, 1000);
 
@@ -131,73 +172,110 @@ class VideoContainer extends Component {
     const rect = e.target.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const totalWidth = rect.width - 1; //subtract borders
-    const newCurrTime = (x / totalWidth) * this.state.time;
-
+    const newCurrTime = (x / totalWidth) * this.state.duration;
     this.setState({ scrubTime: newCurrTime });
   };
 
-  parseVideoId = url => {
-    if (url) {
-      let regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
-      let match = url.match(regExp);
-      if (match && match[2].length === 11) {
-        return match[2];
-      }
+  secondsToTime = time => {
+    if (!isNaN(time)) {
+      let date = new Date(null);
+      date.setSeconds(time);
+      let timeString = date.toISOString().substr(11, 8);
+      return timeString;
     }
+    return "--:--:--";
   };
 
-  secondsToTime = time => {
-    let date = new Date(null);
-    date.setSeconds(time); // specify value for SECONDS here
-    let timeString = date.toISOString().substr(11, 8);
-
-    return timeString;
+  ref = player => {
+    this.player = player;
   };
 
   render = () => {
-    const { currTime, time, scrubTime, ready } = this.state;
-    const videoId = this.parseVideoId(this.props.queue[0]);
+    const {
+      url,
+      playing,
+      controls,
+      light,
+      volume,
+      muted,
+      loop,
+      currTime,
+      scrubTime,
+      duration
+    } = this.state;
 
     return (
       <Window width={50} minWidth={500}>
-        {videoId ? (
+        {url ? (
           <>
-            <Video id="video-player" />
-            {ready ? (
-              <Timeline
-                onClick={this.updateProgressBarPosition}
-                onMouseMove={this.scrubVideo}
-                onMouseOut={() => this.setState({ scrubTime: 0 })}
-              >
-                <Playback currTime={currTime} time={this.state.time}></Playback>
-              </Timeline>
-            ) : null}
+            <ReactPlayer
+              ref={this.ref}
+              className="react-player"
+              width="100%"
+              height="100%"
+              url={url}
+              playing={playing}
+              controls={controls}
+              light={light}
+              loop={loop}
+              volume={volume}
+              muted={muted}
+              onReady={() => console.log("onReady")}
+              onStart={() => console.log("onStart")}
+              onPlay={this.handlePlay}
+              onPause={this.handlePause}
+              onBuffer={() => console.log("onBuffer")}
+              onSeek={e => console.log("onSeek", e)}
+              onEnded={this.handleEnded}
+              onError={e => console.log("onError", e)}
+              onDuration={this.handleDuration}
+            />
+            <Timeline
+              onClick={this.updateProgressBarPosition}
+              onMouseMove={this.scrubVideo}
+              onMouseOut={() => this.setState({ scrubTime: 0 })}
+            >
+              <Playback currTime={currTime} time={duration}></Playback>
+            </Timeline>
             <TimeStamp>
               {scrubTime === 0
-                ? this.secondsToTime(currTime)
+                ? this.secondsToTime(Math.ceil(currTime))
                 : this.secondsToTime(scrubTime)}
-              /{this.secondsToTime(time)}
+              /{this.secondsToTime(duration)}
             </TimeStamp>
             <ButtonsContainer>
+              <VolumeSlider
+                volume={volume}
+                handleVolumeChange={this.handleVolumeChange}
+              />
               <PlayButtons
-                onClick={() => this.player.seekTo(0)}
+                onClick={this.restart}
                 className="fas fa-backward"
                 aria-hidden="true"
               ></PlayButtons>
-              <PlayButtons
-                onClick={this.playVideo}
-                className="fas fa-play-circle"
-                aria-hidden="true"
-              ></PlayButtons>
-              <PlayButtons
-                onClick={this.pauseVideo}
-                className="far fa-pause-circle"
-                aria-hidden="true"
-              ></PlayButtons>
+              {playing ? (
+                <PlayButtons
+                  onClick={this.handlePause}
+                  className="far fa-pause-circle"
+                  aria-hidden="true"
+                ></PlayButtons>
+              ) : (
+                <PlayButtons
+                  onClick={this.handlePlay}
+                  className="fas fa-play-circle"
+                  aria-hidden="true"
+                ></PlayButtons>
+              )}
               <PlayButtons
                 onClick={this.nextVideo}
                 className="fas fa-fast-forward"
                 aria-hidden="true"
+              ></PlayButtons>
+              <PlayButtons
+                onClick={this.handleClickFullscreen}
+                className="fas fa-expand"
+                aria-hidden="true"
+                end={true}
               ></PlayButtons>
             </ButtonsContainer>
           </>

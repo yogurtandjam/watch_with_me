@@ -10,12 +10,8 @@ export const fadeIn = keyframes`
   }
 `;
 
-export const scroll = keyframes`
-  0% {
-    width: 0%;
-  }
-
-  100% {
-    width: 100%;
-  }
+export const flicker = keyframes`
+  0%   { opacity:1; }
+  50%  { opacity:0.5; }
+  100% { opacity:1; }
 `;

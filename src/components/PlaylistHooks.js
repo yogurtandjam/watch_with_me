@@ -1,30 +1,60 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import _ from "lodash";
 
-const PlaylistHooks = () => {
+const PlaylistHooks = socket => {
   const [queue, setQueue] = useState([]);
+  const [initial, setInital] = useState(false);
 
-  const addVideo = input => {
-    if (input.length) {
-      let newQueue = queue.concat(input);
-      setQueue(newQueue);
-    }
-  };
-
-  const removeVideo = url => {
-    for (let i = 0; i < queue.length; i++) {
-      if (queue[i].url === url) {
-        let newArr = queue.slice(0, 1).concat(queue.slice(i + 1));
-        setQueue(newArr);
+  const syncVideo = useCallback(
+    newQueue => {
+      if (!_.isEqual(queue, newQueue)) {
+        setQueue(newQueue);
       }
+    },
+    [queue]
+  );
+
+  const addVideo = useCallback(
+    input => {
+      if (input.length) {
+        socket.emit("queue", input);
+      }
+    },
+    [socket]
+  );
+
+  const removeVideo = useCallback(
+    idx => {
+      socket.emit("remove", idx);
+    },
+    [socket]
+  );
+
+  const dequeueVideo = useCallback(() => {
+    socket.emit("dequeue");
+  }, [socket]);
+
+  useEffect(() => {
+    if (!initial) {
+      socket.emit("initial sync");
+      socket.on("initial sync", intialData => {
+        console.log("queue: ", intialData.queue);
+        syncVideo(intialData.queue);
+        setInital(true);
+      });
+
+      socket.off("initial sync");
     }
-  };
 
-  const dequeueVideo = () => {
-    let newArr = queue.slice();
-    newArr.shift();
+    socket.on("sync playlist", newQueue => {
+      console.log("queue: ", newQueue);
+      syncVideo(newQueue);
+    });
 
-    setQueue(newArr);
-  };
+    return () => {
+      socket.off("sync playlist");
+    };
+  }, [socket, queue, syncVideo, initial, setInital]);
 
   return {
     queue,

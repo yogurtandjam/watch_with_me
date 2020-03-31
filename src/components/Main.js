@@ -1,22 +1,20 @@
-import React from 'react';
+import React from "react";
 
-import { MainContainer } from './styled_components/containers';
-import VideoContainer from './VideoContainer';
-import ChatBarContainer from './ChatBarContainer';
-import PlaylistContainer from './PlaylistContainer';
+import { MainContainer } from "./styled_components/containers";
+import VideoContainer from "./VideoContainer";
+import ChatBarContainer from "./ChatBarContainer";
+import PlaylistContainer from "./PlaylistContainer";
 
-import PlaylistHooks from './PlaylistHooks';
+import PlaylistHooks from "./PlaylistHooks";
+import { Sockets } from "./Socket";
 
-import socketIOClient from 'socket.io-client';
-const socket = socketIOClient('http://localhost:4000/');
 const Main = () => {
-  const { queue, removeVideo, addVideo, dequeueVideo } = PlaylistHooks();
-  if (!socket) return null;
-  socket.on('hi', console.log('hi was emitted'));
+  const { socket } = Sockets(window.location.pathname);
+  const { queue, removeVideo, addVideo, dequeueVideo } = PlaylistHooks(socket);
+
   return (
     <MainContainer>
       <PlaylistContainer
-        socket={socket}
         queue={queue}
         removeVideo={removeVideo}
         addVideo={addVideo}

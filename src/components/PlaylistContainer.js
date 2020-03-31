@@ -1,14 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   Window,
   InputBar,
   UrlContainer,
-  Url,
-} from './styled_components/containers';
+  VideoPreview
+} from "./styled_components/containers";
 
-import { Input, UrlText, Remove, Add } from './styled_components/components';
+import { Input, UrlText, Remove, Add } from "./styled_components/components";
 
-const PlaylistContainer = ({ queue, removeVideo, addVideo, socket }) => {
+const PlaylistContainer = ({ queue, removeVideo, addVideo }) => {
   const [input, setInput] = useState([]);
 
   const handleTextChange = e => {
@@ -16,44 +16,46 @@ const PlaylistContainer = ({ queue, removeVideo, addVideo, socket }) => {
     setInput(e.target.value);
   };
 
-  const submitToQueue = e => {
-    if (e.which === 13) {
+  const handleClick = e => {
+    addVideo(input);
+    setInput("");
+  };
+
+  const handleKeyEnter = e => {
+    if (e.key === "Enter") {
       addVideo(input);
-      socket.emit('queue', input);
-      setInput('');
+      setInput("");
     }
   };
 
   return (
-    <Window width={20} minWidth={275}>
+    <Window width={15} minWidth={225}>
       <InputBar>
         <Input
           onChange={handleTextChange}
           placeholder="Queue Up A Video!"
           value={input}
-          onKeyPress={submitToQueue}
+          onKeyPress={handleKeyEnter}
         ></Input>
         <Add
           type="submit"
           className="fas fa-plus-circle"
           aria-hidden="true"
-          onClick={() => {
-            addVideo(input);
-            setInput('');
-          }}
+          onClick={handleClick}
         ></Add>
       </InputBar>
       <UrlContainer>
-        {queue.map((val, idx) => {
+        {queue.map(({ title, thumbnail, uuid }, idx) => {
           return (
-            <Url key={idx}>
-              <UrlText value={`${idx + 1}: ` + val} disabled></UrlText>
+            <VideoPreview key={uuid}>
+              <img src={thumbnail} height="39px" width="70px"></img>
+              <UrlText>{title}</UrlText>
               <Remove
-                onClick={() => removeVideo(val)}
+                onClick={() => removeVideo(idx)}
                 className="fa fa-minus-circle"
                 aria-hidden="true"
               ></Remove>
-            </Url>
+            </VideoPreview>
           );
         })}
       </UrlContainer>
